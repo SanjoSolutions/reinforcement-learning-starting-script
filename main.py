@@ -19,7 +19,7 @@ tf.compat.v1.enable_v2_behavior()
 
 print(tf.version.VERSION)
 
-num_iterations = 20000 # @param {type:"integer"}
+num_iterations = 20000  # @param {type:"integer"}
 
 initial_collect_steps = 100  # @param {type:"integer"}
 collect_steps_per_iteration = 1  # @param {type:"integer"}
@@ -27,7 +27,7 @@ replay_buffer_max_length = 100000  # @param {type:"integer"}
 
 batch_size = 64  # @param {type:"integer"}
 learning_rate = 1e-3  # @param {type:"number"}
-log_interval = 200  # @param {type:"integer"}
+log_interval = 1  # @param {type:"integer"}
 
 num_eval_episodes = 10  # @param {type:"integer"}
 eval_interval = 1000  # @param {type:"integer"}
@@ -60,7 +60,6 @@ q_net = q_network.QNetwork(
     train_env.action_spec(),
     fc_layer_params=fc_layer_params)
 
-
 optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=learning_rate)
 
 train_step_counter = tf.Variable(0)
@@ -75,31 +74,27 @@ agent = dqn_agent.DqnAgent(
 
 agent.initialize()
 
-
 eval_policy = agent.policy
 collect_policy = agent.collect_policy
-
 
 random_policy = random_tf_policy.RandomTFPolicy(train_env.time_step_spec(),
                                                 train_env.action_spec())
 
 
 def compute_avg_return(environment, policy, num_episodes=10):
+    total_return = 0.0
+    for _ in range(num_episodes):
+        time_step = environment.reset()
+        episode_return = 0.0
 
-  total_return = 0.0
-  for _ in range(num_episodes):
+        while not time_step.is_last():
+            action_step = policy.action(time_step)
+            time_step = environment.step(action_step.action)
+            episode_return += time_step.reward
+        total_return += episode_return
 
-    time_step = environment.reset()
-    episode_return = 0.0
-
-    while not time_step.is_last():
-      action_step = policy.action(time_step)
-      time_step = environment.step(action_step.action)
-      episode_return += time_step.reward
-    total_return += episode_return
-
-  avg_return = total_return / num_episodes
-  return avg_return.numpy()[0]
+    avg_return = total_return / num_episodes
+    return avg_return.numpy()[0]
 
 
 # See also the metrics module for standard implementations of different metrics.
@@ -113,17 +108,19 @@ replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
 
 
 def collect_step(environment, policy, buffer):
-  time_step = environment.current_time_step()
-  action_step = policy.action(time_step)
-  next_time_step = environment.step(action_step.action)
-  traj = trajectory.from_transition(time_step, action_step, next_time_step)
+    time_step = environment.current_time_step()
+    action_step = policy.action(time_step)
+    next_time_step = environment.step(action_step.action)
+    traj = trajectory.from_transition(time_step, action_step, next_time_step)
 
-  # Add trajectory to the replay buffer
-  buffer.add_batch(traj)
+    # Add trajectory to the replay buffer
+    buffer.add_batch(traj)
+
 
 def collect_data(env, policy, buffer, steps):
-  for _ in range(steps):
-    collect_step(env, policy, buffer)
+    for _ in range(steps):
+        collect_step(env, policy, buffer)
+
 
 collect_data(train_env, random_policy, replay_buffer, initial_collect_steps)
 
@@ -136,11 +133,11 @@ collect_data(train_env, random_policy, replay_buffer, initial_collect_steps)
 dataset = replay_buffer.as_dataset(
     num_parallel_calls=3,
     sample_batch_size=batch_size,
-    num_steps=2).prefetch(3)
-
+    num_steps=2,
+    single_deterministic_pass=False
+).prefetch(3)
 
 iterator = iter(dataset)
-
 
 # (Optional) Optimize by wrapping some of the code in a graph using TF function.
 agent.train = common.function(agent.train)
@@ -153,24 +150,22 @@ avg_return = compute_avg_return(eval_env, agent.policy, num_eval_episodes)
 returns = [avg_return]
 
 for _ in range(num_iterations):
+    # Collect a few steps using collect_policy and save to the replay buffer.
+    collect_data(train_env, agent.collect_policy, replay_buffer, collect_steps_per_iteration)
 
-  # Collect a few steps using collect_policy and save to the replay buffer.
-  collect_data(train_env, agent.collect_policy, replay_buffer, collect_steps_per_iteration)
+    # Sample a batch of data from the buffer and update the agent's network.
+    experience, unused_info = next(iterator)
+    train_loss = agent.train(experience).loss
 
-  # Sample a batch of data from the buffer and update the agent's network.
-  experience, unused_info = next(iterator)
-  train_loss = agent.train(experience).loss
+    step = agent.train_step_counter.numpy()
 
-  step = agent.train_step_counter.numpy()
+    if step % log_interval == 0:
+        print('step = {0}: loss = {1}'.format(step, train_loss))
 
-  if step % log_interval == 0:
-    print('step = {0}: loss = {1}'.format(step, train_loss))
-
-  if step % eval_interval == 0:
-    avg_return = compute_avg_return(eval_env, agent.policy, num_eval_episodes)
-    print('step = {0}: Average Return = {1}'.format(step, avg_return))
-    returns.append(avg_return)
-
+    if step % eval_interval == 0:
+        avg_return = compute_avg_return(eval_env, agent.policy, num_eval_episodes)
+        print('step = {0}: Average Return = {1}'.format(step, avg_return))
+        returns.append(avg_return)
 
 iterations = range(0, num_iterations + 1, eval_interval)
 plt.plot(iterations, returns)
@@ -180,15 +175,15 @@ plt.ylim(top=250)
 
 
 def create_policy_eval_video(policy, filename, num_episodes=5, fps=30):
-  filename = filename + ".mp4"
-  with imageio.get_writer(filename, fps=fps) as video:
-    for _ in range(num_episodes):
-      time_step = eval_env.reset()
-      video.append_data(eval_py_env.render())
-      while not time_step.is_last():
-        action_step = policy.action(time_step)
-        time_step = eval_env.step(action_step.action)
-        video.append_data(eval_py_env.render())
+    filename = filename + ".mp4"
+    with imageio.get_writer(filename, fps=fps) as video:
+        for _ in range(num_episodes):
+            time_step = eval_env.reset()
+            video.append_data(eval_py_env.render())
+            while not time_step.is_last():
+                action_step = policy.action(time_step)
+                time_step = eval_env.step(action_step.action)
+                video.append_data(eval_py_env.render())
 
 
 create_policy_eval_video(agent.policy, "trained-agent")
