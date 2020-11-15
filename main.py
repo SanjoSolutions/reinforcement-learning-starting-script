@@ -19,7 +19,7 @@ tf.compat.v1.enable_v2_behavior()
 
 print(tf.version.VERSION)
 
-num_iterations = 20000 # @param {type:"integer"}
+num_iterations = 20000  # @param {type:"integer"}
 
 initial_collect_steps = 100  # @param {type:"integer"}
 collect_steps_per_iteration = 1  # @param {type:"integer"}
@@ -27,12 +27,12 @@ replay_buffer_max_length = 100000  # @param {type:"integer"}
 
 batch_size = 64  # @param {type:"integer"}
 learning_rate = 1e-3  # @param {type:"number"}
-log_interval = 200  # @param {type:"integer"}
+log_interval = 1  # @param {type:"integer"}
 
 num_eval_episodes = 10  # @param {type:"integer"}
 eval_interval = 1000  # @param {type:"integer"}
 
-env_name = 'CartPole-v0'
+env_name = 'Breakout-v0'
 env = suite_gym.load(env_name)
 
 env.reset()
@@ -136,7 +136,9 @@ collect_data(train_env, random_policy, replay_buffer, initial_collect_steps)
 dataset = replay_buffer.as_dataset(
     num_parallel_calls=3,
     sample_batch_size=batch_size,
-    num_steps=2).prefetch(3)
+    num_steps=2,
+    single_deterministic_pass=False
+).prefetch(3)
 
 
 iterator = iter(dataset)
