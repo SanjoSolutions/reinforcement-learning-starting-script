@@ -84,16 +84,6 @@ random_policy = random_tf_policy.RandomTFPolicy(train_env.time_step_spec(),
                                                 train_env.action_spec())
 
 
-example_environment = tf_py_environment.TFPyEnvironment(
-    suite_gym.load('CartPole-v0'))
-
-
-time_step = example_environment.reset()
-
-
-random_policy.action(time_step)
-
-
 def compute_avg_return(environment, policy, num_episodes=10):
 
   total_return = 0.0
